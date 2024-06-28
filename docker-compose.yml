@@ -1,0 +1,59 @@
+version: "3.7"
+
+services:
+  traefik:
+    image: "traefik:latest"
+    logging:
+      driver: none
+    container_name: "traefik"
+    hostname: "traefik"
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080"
+    volumes:
+      - "/run/user/1000/podman/podman.sock:/var/run/docker.sock:ro"
+      - "./traefik.yml:/traefik.yml:ro"
+      - "./traefik_dynamic.yml:/traefik_dynamic.yml:rw"
+      - "./acme.json:/acme.json:rw"  
+      - "./users_credentials:/users_credentials:ro"
+    labels:
+      - "traefik.enable=true"
+      ## DNS CHALLENGE
+      - "traefik.http.routers.traefik.tls.certresolver=lets-encr"
+      - "traefik.http.routers.traefik.tls.domains[0].main=*.$MY_DOMAIN"
+      - "traefik.http.routers.traefik.tls.domains[0].sans=$MY_DOMAIN"
+      ## HTTP REDIRECT
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.redirect-https.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.redirect-https.entrypoints=web"
+      - "traefik.http.routers.redirect-https.middlewares=redirect-to-https"
+      ## triying to make work dashboard
+      - "traefik.http.routers.traefik.rule=Host(`monitor.ejemplo.com`)" #este sera el subdominio para acceder al dashboard de traefik
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.middlewares=auth-middleware"
+      - "traefik.http.middlewares.auth-middleware.basicauth.usersfile=/users_credentials"
+      - "traefik.http.routers.app-secure.middlewares=sslheader@docker"
+      ##WEBSOCKET CONNECTIONS ENABLE
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+    command:
+#      - "--accesslog"
+      - "--providers.podman"
+      - "--security-opt"
+      - "label=type:container_runtime_t"
+   
+
+  certdumper:
+    image: humenius/traefik-certs-dumper:latest
+    volumes:
+      - "./:/traefik:ro"
+      - "./output:/output:rw"
+
+
+networks:
+  default:
+    external:
+      name: $DEFAULT_NETWORK
